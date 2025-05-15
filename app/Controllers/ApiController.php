@@ -6,6 +6,7 @@ use App\Models\UsersModel;
 use CodeIgniter\HTTP\ResponseInterface;
 use CodeIgniter\RESTful\ResourceController;
 use App\config\APIJwt;
+use App\Models\ConfigModel;
 use App\Models\PartidesModel;
 use App\Models\TokensModel;
 use Firebase\JWT\JWT;
@@ -92,54 +93,53 @@ class ApiController extends ResourceController
 
     public function createUser()
     {
-        helper("form");
+        // Cargar el helper de formularios (por si es necesario para algunas funciones)
+        helper('form');
 
+        // Definir las reglas de validación
         $rules = [
-            'nom_usuari' => 'required',
+            'nom_usuari' => 'required', // Verifica si el nombre de usuario ya existe
             'password' => 'required|min_length[4]',
-            'password_confirm' => 'required',
-            'email' => 'required|valid_email',
-            'edat' => 'required|integer',
+            'password_confirm' => 'required|matches[password]',
+            'email' => 'required|valid_email|', // Verifica si el email ya existe
+            'edad' => 'required|integer',
             'telefon' => 'required|integer',
             'pais' => 'required',
-
         ];
-        if (!$this->validate($rules)) return $this->fail($this->validator->getErrors());
 
+        // Validar los datos del formulario
+        if (!$this->validate($rules)) {
+            // Retorna los errores de validación si no son válidos
+            return $this->failValidationErrors($this->validator->getErrors());
+        }
+
+        // Crear un nuevo modelo de usuarios
         $model = new UsersModel();
-        $user = $model->getUserByMailOrUsername($this->request->getVar('nom_usuari'));
 
-        if ($user) {
-            return $this->respond([
-                'status' => 'error',
-                'message' => 'L\'usuari ja existeix'
-            ], 400);
-        }
-        if ($this->request->getVar('password') !== $this->request->getVar('password_confirm')) {
-            return $this->fail('Password confirmation does not match');
-        }
-
-
+        // Recoger los datos del formulario
         $data = [
             'name' => $this->request->getVar('nom_usuari'),
             'password' => password_hash($this->request->getVar('password'), PASSWORD_DEFAULT),
             'email' => $this->request->getVar('email'),
-            'edad' => $this->request->getVar('edat'),
+            'edad' => $this->request->getVar('edad'),
             'telefono' => $this->request->getVar('telefon'),
             'pais' => $this->request->getVar('pais'),
         ];
 
+        // Intentar insertar el nuevo usuario
         if ($model->insert($data)) {
             return $this->respond([
                 'status' => 200,
-                'messages' => 'User created successfully'
+                'message' => 'Usuario creado con éxito'
             ]);
         } else {
-            return $this->fail('Failed to create user');
+            // Si algo salió mal con la inserción, fallamos
+            return $this->failServerError('No se pudo crear el usuario');
         }
     }
 
-    public function login()
+
+     public function login()
     {
         helper("form");
 
@@ -182,11 +182,26 @@ class ApiController extends ResourceController
 
     public function logged()
     {
+        helper("jwt");
+
+        $APIGroupConfig = "default";
+        $cfgAPI = new \Config\APIJwt($APIGroupConfig);
+
+        $token = getToken($cfgAPI->config(), $this->request);
+
+        if (!isset($token['data']->uid)) {
+            return $this->respond([
+                'status' => 'error',
+                'message' => 'Token invàlid'
+            ], 401);
+        }
+
         return $this->respond([
-            'status' => 'ok',
+            'status' => 200,
             'logged' => true
         ]);
     }
+
 
     public function updateUser()
     {
@@ -203,41 +218,43 @@ class ApiController extends ResourceController
         $model = new UsersModel();
         $user = $model->getUserById($token['data']->uid);
 
+        if (!$user) {
+            return $this->failNotFound('Usuari no trobat');
+        }
+
         $rules = [
-            'nom_usuari' => 'required',
-            'password' => 'required|min_length[4]',
-            'email' => 'required|valid_email',
-            'edat' => 'required|integer',
-            'telefon' => 'required|integer',
-            'pais' => 'required'
+            'nom_usuari'       => 'required',
+            'password'         => 'required|min_length[4]',
+            'password_confirm' => 'required|matches[password]',
+            'email'            => 'required|valid_email',
+            'edad'             => 'required|integer',
+            'telefon'          => 'required|integer',
+            'pais'             => 'required'
         ];
 
         if (!$this->validate($rules)) {
             return $this->fail($this->validator->getErrors());
         }
 
-        if ($this->request->getVar('password') !== $this->request->getVar('password_confirm')) {
-            return $this->fail('Password confirmation does not match');
-        }
-
         $updateData = [
-            'name' => $this->request->getVar('nom_usuari'),
+            'name'     => $this->request->getVar('nom_usuari'),
             'password' => password_hash($this->request->getVar('password'), PASSWORD_DEFAULT),
-            'email' => $this->request->getVar('email'),
-            'edad' => $this->request->getVar('edat'),
+            'email'    => $this->request->getVar('email'),
+            'edad'     => $this->request->getVar('edad'),
             'telefono' => $this->request->getVar('telefon'),
-            'pais' => $this->request->getVar('pais')
+            'pais'     => $this->request->getVar('pais')
         ];
 
-        if ($model->update($user, $updateData)) {
+        if ($model->update($user['id'], $updateData)) {
             return $this->respond([
-                'status' => 200,
-                'messages' => 'Usuari actualitzat correctament'
+                'status'  => '200',
+                'message' => 'Usuari actualitzat correctament'
             ]);
         } else {
             return $this->fail('No s\'ha pogut actualitzar l\'usuari');
         }
     }
+
 
 
     public function logout()
@@ -259,6 +276,85 @@ class ApiController extends ResourceController
             'messages' => 'User logged out successfully'
         ]);
     }
+
+    public function config_game()
+    {
+        helper("jwt");
+        $APIGroupConfig = "default";
+        $cfgAPI = new \Config\APIJwt($APIGroupConfig);
+
+        $token = getToken($cfgAPI->config(), $this->request);
+        if (!isset($token['data']->uid)) {
+            return $this->failUnauthorized('Token no vàlid');
+        }
+
+        if (!$this->request->getVar('tema') || !$this->request->getVar('dificultat') || !$this->request->getVar('musica')) {
+            return $this->failValidationErrors('Paràmetres incomplets');
+        }
+
+        $configData = [
+            'user_id'     => $token['data']->uid,
+            'tema'        => $this->request->getVar('tema'),
+            'dificultat'  => $this->request->getVar('dificultat'),
+            'musica'      => $this->request->getVar('musica')
+        ];
+
+        $model = new ConfigModel();
+        if ($model->insert($configData)) {
+            return $this->respond([
+                'status' => 'ok',
+                'message' => 'Configuració registrada'
+            ]);
+        } else {
+            return $this->failServerError('Error al registrar la configuració');
+        }
+    }
+
+    public function update_Config_Game()
+    {
+        helper("form, jwt");
+        $APIGroupConfig = "default";
+        $cfgAPI = new \Config\APIJwt($APIGroupConfig);
+
+        $token = getToken($cfgAPI->config(), $this->request);
+        if (!isset($token['data']->uid)) {
+            return $this->failUnauthorized('Token no vàlid');
+        }
+
+        $model = new ConfigModel();
+        $user_id = $token['data']->uid;
+
+        $existingConfig = $model->getConfigByUserId($user_id);
+        if (!$existingConfig) {
+            return $this->failNotFound('Configuració no trobada');
+        }
+
+        $configData = [];
+        $allowedFields = ['tema', 'dificultat', 'musica'];
+
+        foreach ($allowedFields as $field) {
+            $value = $this->request->getVar($field);
+            if ($value !== null) {
+                $configData[$field] = $value;
+            }
+        }
+
+        if (empty($configData)) {
+            return $this->fail('No s\'ha proporcionat cap configuració per actualitzar');
+        }
+
+        if ($model->update($existingConfig['id'], $configData)) {
+            return $this->respond([
+                'status' => 'ok',
+                'message' => 'Configuració actualitzada',
+                'data' => $configData
+            ]);
+        } else {
+            return $this->fail('No s\'ha pogut actualitzar la configuració');
+        }
+    }
+
+
 
     public function add_game()
     {
@@ -370,6 +466,34 @@ class ApiController extends ResourceController
             'percentatge_victories' => $percentatge,
             'mitjana_punts' => $mitjanaPunts,
             'mitjana_durada' => $mitjanaDurada
+        ]);
+    }
+
+    public function get_top_users()
+    {
+        $model = new UsersModel();
+
+        $topUsers = $model->getTopPlayers();
+
+        if (!$topUsers) {
+            return $this->failNotFound('No hi ha jugadors disponibles');
+        }
+
+        $players = [];
+        foreach ($topUsers as $index => $user) {
+            $players[] = [
+                'posicio' => $index + 1,
+                'nom_usuari' => $user['name'],
+                'partides' => $user['games_played'],
+                'victories' => $user['victories'],
+                'derrotes' => $user['defeats'],
+                'punts_totals' => $user['total_points']
+            ];
+        }
+
+        return $this->respond([
+            'status' => 'ok',
+            'jugadors' => $players
         ]);
     }
 }

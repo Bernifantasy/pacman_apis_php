@@ -4,15 +4,15 @@ namespace App\Models;
 
 use CodeIgniter\Model;
 
-class UsersModel extends Model
+class ConfigModel extends Model
 {
-    protected $table            = 'users';
+    protected $table            = 'config';
     protected $primaryKey       = 'id';
     protected $useAutoIncrement = true;
     protected $returnType       = 'array';
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
-    protected $allowedFields    = ['name', 'email', 'password', 'edad', 'telefono', 'pais'];
+    protected $allowedFields    = ['user_id', 'tema', 'dificultat', 'musica'];
 
     protected bool $allowEmptyInserts = false;
     protected bool $updateOnlyChanged = true;
@@ -44,26 +44,8 @@ class UsersModel extends Model
     protected $beforeDelete   = [];
     protected $afterDelete    = [];
 
-    public function getUserByMailOrUsername($emailOrUsername)
+    public function getConfigByUserId($userId)
     {
-        return $this->where('email', $emailOrUsername)
-            ->orWhere('name', $emailOrUsername)
-            ->first();
-    }
-    public function getUserById($id)
-    {
-        return $this->where('id', $id)->first();
-    }
-
-    public function getTopPlayers()
-    {
-        return $this->db->table('users')
-            ->select('users.id, users.name, SUM(partides.puntuacio) as total_points, COUNT(partides.id) as games_played, SUM(CASE WHEN partides.resultat = 1 THEN 1 ELSE 0 END) as victories, COUNT(partides.id) - SUM(CASE WHEN partides.resultat = 1 THEN 1 ELSE 0 END) as defeats')
-            ->join('partides', 'partides.usuari_id = users.id', 'left')
-            ->groupBy('users.id')
-            ->orderBy('total_points', 'DESC')
-            ->limit(10)
-            ->get()
-            ->getResultArray();
+        return $this->where('user_id', $userId)->first();
     }
 }

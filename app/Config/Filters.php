@@ -36,6 +36,7 @@ class Filters extends BaseFilters
         'pagecache'     => PageCache::class,
         'performance'   => PerformanceMetrics::class,
         'jwt' => JWTFilter::class,
+        'cmanual' => \App\Filters\CorsmanualFilter::class,
     ];
 
     /**
@@ -74,6 +75,7 @@ class Filters extends BaseFilters
             // 'honeypot',
             // 'csrf',
             // 'invalidchars',
+            'cmanual',
         ],
         'after' => [
             // 'honeypot',
